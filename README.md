@@ -1,4 +1,4 @@
-# Pomegranate [![Build Status](https://travis-ci.org/btubbs/pomegranate.svg?branch=master)](https://travis-ci.org/btubbs/pomegranate) [![Coverage Status](https://coveralls.io/repos/github/btubbs/pomegranate/badge.svg?branch=master)](https://coveralls.io/github/btubbs/pomegranate?branch=master)
+# Pomegranate [![Build Status](https://travis-ci.org/nav-inc/pomegranate.svg?branch=master)](https://travis-ci.org/nav-inc/pomegranate) [![Coverage Status](https://coveralls.io/repos/github/nav-inc/pomegranate/badge.svg?branch=master)](https://coveralls.io/github/nav-inc/pomegranate?branch=master)
 
 Pomegranate is a tool for creating and running schema migrations for the
 Postgres database, emphasizing safety and transparency.  All migrations are
@@ -19,14 +19,14 @@ will be compiled into their project and run with the `pomegranate` package.
 
 For now, pomegranate has to be built from source:
 
-    $ go install github.com/btubbs/pomegranate/pmg
+    $ go install github.com/nav-inc/pomegranate/pmg
 
 ## Usage
 
 You can use Pomegranate in two ways:
 
 1. As a standalone command line tool (`pmg`).
-2. As a library (`github.com/btubbs/pomegranate`) in your own Go project.
+2. As a library (`github.com/nav-inc/pomegranate`) in your own Go project.
 
 ### Using `pmg`
 #### Create initial migration
@@ -145,7 +145,7 @@ project so that migrations can be included inside your binary program and
 executed by it.
 
 The full public interface is documented at
-[https://godoc.org/github.com/btubbs/pomegranate](https://godoc.org/github.com/btubbs/pomegranate).
+[https://godoc.org/github.com/nav-inc/pomegranate](https://godoc.org/github.com/nav-inc/pomegranate).
 
 #### Ingest migrations
 
@@ -210,8 +210,8 @@ In that example, my_awesome_app.go looks like this:
       "fmt"
       "os"
 
-      "github.com/btubbs/my_awesome_app/migrations"
-      "github.com/btubbs/pomegranate"
+      "github.com/nav-inc/my_awesome_app/migrations"
+      "github.com/nav-inc/pomegranate"
     )
 
     func main() {
