@@ -1,4 +1,4 @@
-# Pomegranate [![Build Status](https://travis-ci.org/nav-inc/pomegranate.svg?branch=master)](https://travis-ci.org/nav-inc/pomegranate) [![Coverage Status](https://coveralls.io/repos/github/nav-inc/pomegranate/badge.svg?branch=master)](https://coveralls.io/github/nav-inc/pomegranate?branch=master)
+# Pomegranate [![Build Status](https://travis-ci.com/nav-inc/pomegranate.svg?branch=master)](https://travis-ci.com/nav-inc/pomegranate)
 
 Pomegranate is a tool for creating and running schema migrations for the
 Postgres database, emphasizing safety and transparency.  All migrations are
