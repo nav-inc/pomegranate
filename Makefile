@@ -18,12 +18,3 @@ viewcoverage: profile.cov
 
 check: $(GOBIN)/golangci-lint
 	$(GOBIN)/golangci-lint run
-
-$(GOBIN)/goveralls:
-	go get -v -u github.com/mattn/goveralls
-
-$(GOBIN)/golangci-lint:
-	curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(GOPATH)/bin v1.12.3
-
-ci: profile.cov $(GOBIN)/goveralls
-	$(GOBIN)/goveralls -coverprofile=$< -service=travis-ci
