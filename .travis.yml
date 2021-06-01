@@ -5,4 +5,4 @@ sudo: false
 services:
   - postgresql
 script:
-  - make ci
+  - make tests
