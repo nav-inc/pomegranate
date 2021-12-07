@@ -77,6 +77,12 @@ an empty migration.  You should replace it with your own commands.
 Be sure to also add the necessary commands to `backward.sql` to safely roll back
 the changes in `forward.sql`, in case you decide they were a bad idea.
 
+For migrations that require statements to be run outside of transactions, the
+`forward.sql` and `backward.sql` files can be broken up into `forward_n.sql` and
+ `backward_n.sql`, where `n` is a member of the integer sequence starting at 1.
+ The migrations will be executed sequentially, starting with `forward_1.sql` or
+ `backward_1.sql`. See a multi-file migration example below.
+
 #### Run migrations
 
 Use the `forward` command to run all migrations not yet recorded in the
@@ -247,3 +253,98 @@ And run it like so:
     Running 00001_init... Success!
     Running 00002_add_customers_table... Success!
     Running 00003_add_address_column... Success!
+
+#### A multi-file migration example
+
+Here's an example of a project that uses Pomegranate and needs to utilize a multi-file migration:
+
+    $ tree
+    .
+    ├── migrations
+    │   ├── 00001_init
+    │   │   ├── backward.sql
+    │   │   └── forward.sql
+    │   ├── 00002_add_customers_table
+    │   │   ├── backward.sql
+    │   │   └── forward.sql
+    │   └── 00003_index_customers_table
+    │       ├── backward_1.sql
+    |       ├── backward_2.sql
+    |       ├── forward_1.sql
+    │       └── forward_2.sql
+    └── my_awesome_app.go
+
+Let's take a look at `forward_1.sql` and `forward_2.sql`
+
+`forward_1.sql`:
+
+    CREATE INDEX CONCURRENTLY
+        customer_index
+    ON
+        customers (id);
+
+`forward_2.sql`:
+
+    INSERT INTO
+        migration_state(name)
+    VALUES
+        ('00003_index_customers_table');
+
+The reason we need to separate our forward migrations into
+two files is because we want to utilize the `CONCURRENTLY`
+parameter when creating our index. This parameter will allow
+our PostgreSQL to create the index without acquiring a lock
+that will prevent our database from performing. This is
+especially important in production environments with very
+large tables. The downside of the `CONCURRENTLY` parameter
+is that it must be run outside of a SQL transaction. We can
+do that by isolating the command in `forward_1.sql`. Of
+course, we want to keep track of our migration state, so
+we put that insert statement into `forward_2.sql`.
+
+Aside from the change addressed above, the rest of the
+my_awesome_app.go will be the same:
+
+    package main
+
+    import (
+      "fmt"
+      "os"
+
+      "github.com/nav-inc/my_awesome_app/migrations"
+      "github.com/nav-inc/pomegranate"
+    )
+
+    func main() {
+      db, err := pomegranate.Connect(
+        "postgres://postgres@/awesome_app?sslmode=disable")
+      if err != nil {
+        fmt.Println(err)
+        os.Exit(1)
+      }
+      // passing an empty string as name will run to the latest migration
+      pomegranate.MigrateForwardTo("", db, migrations.All, true)
+    }
+
+Given the above, you can build my_awesome_app like so:
+
+    $ cd migrations
+    $ pmg ingest
+    Migrations written to migrations.go
+    $ cd ..
+    $ go build
+
+And run it like so:
+
+    $ psql -c "CREATE DATABASE awesome_app"
+    CREATE DATABASE
+    $ ./my_awesome_app 
+    Connecting to database 'awesome_app' on host ''
+    Forward migrations that will be run:
+    00001_init
+    00002_add_customers_table
+    00003_index_customers_table
+    Run these migrations? (y/n) y
+    Running 00001_init... Success!
+    Running 00002_add_customers_table... Success!
+    Running 00003_index_customers_table... Success!
