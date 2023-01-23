@@ -44,7 +44,7 @@ func TestNameInState(t *testing.T) {
 	}{
 		{
 			name:   "foo",
-			state:  []MigrationRecord{MigrationRecord{Name: "foo"}},
+			state:  []MigrationRecord{{Name: "foo"}},
 			result: true,
 		},
 		{
@@ -66,7 +66,7 @@ func TestNameInMigrations(t *testing.T) {
 	}{
 		{
 			name:       "foo",
-			migrations: []Migration{Migration{Name: "foo"}},
+			migrations: []Migration{{Name: "foo"}},
 			result:     true,
 		},
 		{
@@ -90,19 +90,19 @@ func TestTrimMigrationsTail(t *testing.T) {
 		{
 			name: "foo",
 			in: []Migration{
-				Migration{Name: "foo"},
-				Migration{Name: "bar"},
+				{Name: "foo"},
+				{Name: "bar"},
 			},
 			out: []Migration{
-				Migration{Name: "foo"},
+				{Name: "foo"},
 			},
 			err: nil,
 		},
 		{
 			name: "banana",
 			in: []Migration{
-				Migration{Name: "foo"},
-				Migration{Name: "bar"},
+				{Name: "foo"},
+				{Name: "bar"},
 			},
 			out: nil,
 			err: errors.New("migration banana not found"),

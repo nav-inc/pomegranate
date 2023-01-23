@@ -13,9 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var dburl string
-var master *sql.DB
-var r *rand.Rand
+var (
+	dburl  string
+	master *sql.DB
+	r      *rand.Rand
+)
 
 func randName() string {
 	b := make([]byte, 8)
@@ -58,7 +60,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestConnect(t *testing.T) {
-
 	goodURL, _ := url.Parse(dburl)
 	goodURL.Path = "/goodconnect"
 	tt := []struct {
@@ -227,7 +228,8 @@ func TestMigrateBackwardTo(t *testing.T) {
 	err = MigrateBackwardTo(goodMigrations[0].Name, db, goodMigrations, false)
 	assert.Equal(t,
 		errors.New(
-			"error running migration: pq: Will not roll back 00001_init.  You must manually drop the migration_state and migration_log tables."),
+			"error running migration: pq: Will not roll back 00001_init.  You must manually drop the migration_state and migration_log tables.",
+		),
 		err,
 	)
 }
@@ -346,7 +348,8 @@ $$ LANGUAGE plpgsql;
 SELECT no_rollback();
 COMMIT;
 `},
-	}, {
+	},
+	{
 		Name: "00002_foobar",
 		ForwardSQL: []string{`BEGIN;
 CREATE TABLE foo (
@@ -361,7 +364,8 @@ DROP TABLE foo;
 DELETE FROM migration_state WHERE name='00002_foobar';
 COMMIT;
 `},
-	}, {
+	},
+	{
 		Name: "00003_foobaz",
 		ForwardSQL: []string{`BEGIN;
 ALTER TABLE foo ADD COLUMN bar TEXT;
@@ -373,7 +377,8 @@ ALTER TABLE foo DROP COLUMN bar;
 DELETE FROM migration_state WHERE name='00003_foobaz';
 COMMIT;
 `},
-	}, {
+	},
+	{
 		Name: "00004_fooquux",
 		ForwardSQL: []string{`BEGIN;
 CREATE TABLE quux (
@@ -391,12 +396,14 @@ COMMIT;
 	},
 	{
 		Name: "00005_seperate",
-		ForwardSQL: []string{`
+		ForwardSQL: []string{
+			`
 		CREATE TABLE quuxConcurrent  (
 		id SERIAL PRIMARY KEY,
 		time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 		);`, `CREATE INDEX CONCURRENTLY idx_id on quuxConcurrent(id);`,
-			`INSERT INTO migration_state(name) VALUES ('00005_seperate');`},
+			`INSERT INTO migration_state(name) VALUES ('00005_seperate');`,
+		},
 		BackwardSQL: []string{`BEGIN;
 		DROP TABLE quuxConcurrent;
 		DELETE FROM migration_state WHERE name='00005_seperate';

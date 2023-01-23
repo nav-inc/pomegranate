@@ -128,22 +128,22 @@ func TestReadMigrations(t *testing.T) {
 	ioutil.WriteFile(path.Join(m5, "backward.sql"), []byte("m5 backward"), 0644)
 
 	expected := []Migration{
-		Migration{
+		{
 			Name:        "00001_foo",
 			ForwardSQL:  []string{"m1 forward"},
 			BackwardSQL: []string{"m1 backward"},
 		},
-		Migration{
+		{
 			Name:        "00002_bar",
 			ForwardSQL:  []string{"m2 forward"},
 			BackwardSQL: []string{"m2 backward"},
 		},
-		Migration{
+		{
 			Name:        "00005_sos",
 			ForwardSQL:  []string{"m5 forward", "m5 forward2"},
 			BackwardSQL: []string{"m5 backward"},
 		},
-		Migration{
+		{
 			Name:        "20181106123456_baz",
 			ForwardSQL:  []string{"m4 forward"},
 			BackwardSQL: []string{"m4 backward"},
