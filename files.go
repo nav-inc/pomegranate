@@ -2,6 +2,7 @@ package pomegranate
 
 import (
 	"bytes"
+	"embed"
 	"fmt"
 	"go/format"
 	"io/ioutil"
@@ -123,6 +124,18 @@ func ReadMigrationFiles(dir string) ([]Migration, error) {
 	return migs, nil
 }
 
+/*
+	ReadMigrationFs allows one to embed an entire migration folder using the [embed] package.
+
+go:embed migrations-dir
+var migrationDir embed.FS
+...
+migrations, err := ReadMigrationFs(migrationDir)
+*/
+func ReadMigrationFS(migrations embed.FS) ([]Migration, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 // return a list of subdirs that match our pattern
 func getMigrationDirectoryNames(dir string) ([]string, error) {
 	names := []string{}
@@ -179,8 +192,8 @@ func makeStubName(numPart int, namePart string) string {
 	return fmt.Sprintf("%s_%s", zeroPad(numPart, leadingDigits), namePart)
 }
 
-//little utility to read the contents of a list of file names into
-//an array of strings which contains the contents.
+// little utility to read the contents of a list of file names into
+// an array of strings which contains the contents.
 func readFileArray(fileNames []string) ([]string, error) {
 	files := []string{}
 
