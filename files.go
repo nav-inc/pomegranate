@@ -133,7 +133,7 @@ var migrationDir embed.FS
 migrations, err := ReadMigrationFs(migrationDir)
 */
 func ReadMigrationFS(migrations embed.FS) ([]Migration, error) {
-
+	return nil, fmt.Errorf("not implemented")
 }
 
 // return a list of subdirs that match our pattern
