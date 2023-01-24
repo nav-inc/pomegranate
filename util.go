@@ -150,3 +150,9 @@ func getMigrationsToReverse(name string, state []MigrationRecord, allMigrations 
 	}
 	return nil, fmt.Errorf("migration %s not in state", name)
 }
+
+func panicOnError(err error, message string, args ...interface{}) {
+	if err != nil {
+		panic(fmt.Errorf(message, args...))
+	}
+}

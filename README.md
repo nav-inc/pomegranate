@@ -153,7 +153,26 @@ executed by it.
 The full public interface is documented at
 [https://godoc.org/github.com/nav-inc/pomegranate](https://godoc.org/github.com/nav-inc/pomegranate).
 
-#### Ingest migrations
+#### Using `embed` Package 
+The `embed` package was added in `go1.16`, and is a really useful way to embed files inside your go programs.
+To use this method, you will need to package your migrations (eg: the folder full of number-prefixed folders)
+similar to the following.
+
+```go
+
+//go:embed path/to/migrations
+var embedded embed.FS
+var migrationFS = FromEmbed(embedded, "path/to/migrations")
+...
+
+migrations, err := pomegranate.ReadMigrationFS(migrationFS)
+
+```
+
+This method completely overrides the need for the deprecated method below. 
+It will always pick up files and directories that live inside the "path/to/migrations" folder at compile time.
+
+#### Ingest migrations (deprecated)
 
 Use the `pmg ingest` command to turn your .sql migrations into a .go file that
 can be compiled into your project.  Run it in the same directory as your

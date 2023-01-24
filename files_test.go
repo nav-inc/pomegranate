@@ -1,7 +1,9 @@
 package pomegranate
 
 import (
+	"embed"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path"
@@ -128,22 +130,22 @@ func TestReadMigrations(t *testing.T) {
 	ioutil.WriteFile(path.Join(m5, "backward.sql"), []byte("m5 backward"), 0644)
 
 	expected := []Migration{
-		Migration{
+		{
 			Name:        "00001_foo",
 			ForwardSQL:  []string{"m1 forward"},
 			BackwardSQL: []string{"m1 backward"},
 		},
-		Migration{
+		{
 			Name:        "00002_bar",
 			ForwardSQL:  []string{"m2 forward"},
 			BackwardSQL: []string{"m2 backward"},
 		},
-		Migration{
+		{
 			Name:        "00005_sos",
 			ForwardSQL:  []string{"m5 forward", "m5 forward2"},
 			BackwardSQL: []string{"m5 backward"},
 		},
-		Migration{
+		{
 			Name:        "20181106123456_baz",
 			ForwardSQL:  []string{"m4 forward"},
 			BackwardSQL: []string{"m4 backward"},
@@ -186,4 +188,77 @@ func TestIngestMigrations(t *testing.T) {
 		contents,
 		"//go:generate",
 	)
+}
+
+//go:embed fixtures/embed
+var embedded embed.FS
+var testMigrations = FromEmbed(embedded, "fixtures/embed")
+
+func TestReadMigrationFS(t *testing.T) {
+	tests := []struct {
+		name      string
+		migFolder fs.ReadDirFS
+		want      []Migration
+		wantErr   bool
+	}{
+		{
+			"Using OSPath",
+			OsDir("fixtures/embed"),
+			[]Migration{
+				{
+					Name: "00001_init",
+					ForwardSQL: []string{
+						"BEGIN;\nCREATE TABLE migration_state (\n\tname TEXT NOT NULL,\n\ttime TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,\n\twho TEXT DEFAULT CURRENT_USER NOT NULL,\n\tPRIMARY KEY (name)\n);\n\nCREATE TABLE migration_log (\n  id SERIAL PRIMARY KEY,\n  time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),\n  name TEXT NOT NULL,\n  op TEXT NOT NULL,\n  who TEXT NOT NULL DEFAULT CURRENT_USER\n);\n\nCREATE OR REPLACE FUNCTION record_migration() RETURNS trigger AS $$\nBEGIN\n\tIF TG_OP='DELETE' THEN\n\t\tINSERT INTO migration_log (name, op) VALUES (\n\t\t\tOLD.name,\n\t\t\tTG_OP\n\t\t);\n\t\tRETURN OLD;\n\tELSE\n\t\tINSERT INTO migration_log (name, op) VALUES (\n          NEW.name,\n          TG_OP\n\t\t);\n\t\tRETURN NEW;\n\tEND IF;\nEND;\n$$ language plpgsql;\n\nCREATE TRIGGER record_migration AFTER INSERT OR UPDATE OR DELETE ON migration_state\n  FOR EACH ROW EXECUTE PROCEDURE record_migration();\n\nINSERT INTO migration_state(name) VALUES ('00001_init');\nCOMMIT;\n",
+					},
+					BackwardSQL: []string{
+						"BEGIN;\nCREATE OR REPLACE FUNCTION no_rollback() RETURNS void AS $$\nBEGIN\n  RAISE 'Will not roll back 00001_init.  You must manually drop the migration_state and migration_log tables.';\nEND;\n$$ LANGUAGE plpgsql;\n\nSELECT no_rollback();\nCOMMIT;\n",
+					},
+				},
+				{
+					Name: "00002_people",
+					ForwardSQL: []string{
+						"CREATE TABLE IF NOT EXISTS animal (\n\tid BIGSERIAL PRIMARY KEY,\n\tname TEXT NOT NULL,\n  weight FLOAT NOT NULL\n);\n",
+						"CREATE TABLE IF NOT EXISTS pets (\n\tid BIGSERIAL PRIMARY KEY,\n  animal bigint references animal(id),\n\tname TEXT NOT NULL\n);\n",
+					},
+					BackwardSQL: []string{"DROP TABLE IF EXISTS animal CASCADE;\n", "DROP TABLE IF EXISTS pets;\n"},
+				},
+			},
+			false,
+		},
+		{
+			"Using embed",
+			testMigrations,
+			[]Migration{
+				{
+					Name: "00001_init",
+					ForwardSQL: []string{
+						"BEGIN;\nCREATE TABLE migration_state (\n\tname TEXT NOT NULL,\n\ttime TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,\n\twho TEXT DEFAULT CURRENT_USER NOT NULL,\n\tPRIMARY KEY (name)\n);\n\nCREATE TABLE migration_log (\n  id SERIAL PRIMARY KEY,\n  time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),\n  name TEXT NOT NULL,\n  op TEXT NOT NULL,\n  who TEXT NOT NULL DEFAULT CURRENT_USER\n);\n\nCREATE OR REPLACE FUNCTION record_migration() RETURNS trigger AS $$\nBEGIN\n\tIF TG_OP='DELETE' THEN\n\t\tINSERT INTO migration_log (name, op) VALUES (\n\t\t\tOLD.name,\n\t\t\tTG_OP\n\t\t);\n\t\tRETURN OLD;\n\tELSE\n\t\tINSERT INTO migration_log (name, op) VALUES (\n          NEW.name,\n          TG_OP\n\t\t);\n\t\tRETURN NEW;\n\tEND IF;\nEND;\n$$ language plpgsql;\n\nCREATE TRIGGER record_migration AFTER INSERT OR UPDATE OR DELETE ON migration_state\n  FOR EACH ROW EXECUTE PROCEDURE record_migration();\n\nINSERT INTO migration_state(name) VALUES ('00001_init');\nCOMMIT;\n",
+					},
+					BackwardSQL: []string{
+						"BEGIN;\nCREATE OR REPLACE FUNCTION no_rollback() RETURNS void AS $$\nBEGIN\n  RAISE 'Will not roll back 00001_init.  You must manually drop the migration_state and migration_log tables.';\nEND;\n$$ LANGUAGE plpgsql;\n\nSELECT no_rollback();\nCOMMIT;\n",
+					},
+				},
+				{
+					Name: "00002_people",
+					ForwardSQL: []string{
+						"CREATE TABLE IF NOT EXISTS animal (\n\tid BIGSERIAL PRIMARY KEY,\n\tname TEXT NOT NULL,\n  weight FLOAT NOT NULL\n);\n",
+						"CREATE TABLE IF NOT EXISTS pets (\n\tid BIGSERIAL PRIMARY KEY,\n  animal bigint references animal(id),\n\tname TEXT NOT NULL\n);\n",
+					},
+					BackwardSQL: []string{"DROP TABLE IF EXISTS animal CASCADE;\n", "DROP TABLE IF EXISTS pets;\n"},
+				},
+			},
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadMigrationFS(tt.migFolder)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ReadMigrationFS() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			t.Logf("%#v", &got)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

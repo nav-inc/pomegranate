@@ -1,0 +1,46 @@
+---
+name: Testing and Linting
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - master
+      - main
+  pull_request:
+
+jobs:
+  test:
+    name: package testing
+    container: golang:1.19-bullseye
+    # strategy:
+    #  matrix:
+    #    go-version: [1.18.x, 1.19.x]
+    #    os: [ubuntu-latest]
+    # runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: "postgres"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        # with:
+        #  go-version: ${{ matrix.go-version }}
+      - name: Install Deps
+        run: go get .
+      - name: Test
+        env:
+          DATABASE_URL: "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"
+        run: go test ./...

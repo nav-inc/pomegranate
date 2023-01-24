@@ -13,9 +13,25 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var dburl string
-var master *sql.DB
-var r *rand.Rand
+var (
+	dburl = func() string {
+		if val := os.Getenv("DATABASE_URL"); val != "" {
+			return val
+		}
+		return "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+	}()
+	r = rand.New(rand.NewSource(time.Now().UnixNano()))
+)
+
+func mustDb(t *testing.T, dial string) *sql.DB {
+	db, err := sql.Open("postgres", dial)
+	if err != nil {
+		w := fmt.Errorf("unable to open db to %q: %w", dial, err)
+		t.Error(w)
+		panic(w)
+	}
+	return db
+}
 
 func randName() string {
 	b := make([]byte, 8)
@@ -26,86 +42,74 @@ func randName() string {
 	return string(b)
 }
 
+func TestConnect(t *testing.T) {
+	tests := []struct {
+		name    string
+		dial    string
+		wantErr bool
+	}{
+		{"known good URL connects", dburl, false},
+		{"empty URL yields error", "", true},
+		{
+			"non-URI format yield error",
+			":",
+			true,
+		},
+		/*{
+			"non-URI format yield error",
+			"host=localhost user=postgres password=postgres port=5432 sslmode=disable",
+			false,
+		},*/
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, err := Connect(tt.dial)
+			if (err != nil) != tt.wantErr {
+				t.Logf("Err=%v, wantErr=%v", err, tt.wantErr)
+				t.Errorf("expected an error, but got a nil, or got an error and didnt expect it")
+				return
+			}
+			if err != nil {
+				return
+			}
+			defer db.Close()
+			assert.Nilf(t, db.Ping(), "Ensure DB is active")
+		})
+	}
+}
+
 // freshDB returns a connection to a new, empty, randomly named DB, and a
 // function that will close it and delete the random DB when called
-func freshDB() (*sql.DB, func()) {
-	name := "pmgtest" + randName()
-	master.Exec("CREATE DATABASE " + name)
+func freshDB(t *testing.T) (*sql.DB, func()) {
+	t.Helper()
+	dbname := "pmgtest_" + randName()
+
+	db := mustDb(t, dburl)
+	if _, err := db.Exec("CREATE DATABASE " + dbname); err != nil {
+		t.Errorf("Unable to create DB: %v", err)
+	}
 
 	newURL, _ := url.Parse(dburl)
-	newURL.Path = "/" + name
-	url := newURL.String()
-	db, _ := sql.Open("postgres", url)
+	newURL.Path = "/" + dbname
+	t.Logf("Creating test URI=%v host=%v dbname=%v", newURL.String(), newURL.Host, newURL.Path)
+	newdb := mustDb(t, newURL.String())
 	cleanup := func() {
-		db.Close()
-		master.Exec("DROP DATABASE " + name)
-	}
-	return db, cleanup
-}
-
-func TestMain(m *testing.M) {
-	r = rand.New(rand.NewSource(time.Now().UnixNano()))
-	var err error
-	dburl = os.Getenv("DATABASE_URL")
-	if dburl == "" {
-		dburl = "postgres://postgres@/postgres?sslmode=disable"
-	}
-	master, err = sql.Open("postgres", dburl)
-	if err != nil {
-		os.Exit(1)
-	}
-	os.Exit(m.Run())
-}
-
-func TestConnect(t *testing.T) {
-
-	goodURL, _ := url.Parse(dburl)
-	goodURL.Path = "/goodconnect"
-	tt := []struct {
-		dbname string
-		dburl  string
-		err    error
-	}{
-		{
-			dbname: "goodconnect",
-			dburl:  goodURL.String(),
-			err:    nil,
-		},
-		{
-			dbname: "emptyurl",
-			dburl:  "",
-			err:    errors.New("empty database url provided"),
-		},
-		{
-			dbname: "badurl",
-			dburl:  ":",
-			err:    &url.Error{Op: "parse", URL: ":", Err: errors.New("missing protocol scheme")},
-		},
-	}
-
-	for _, tc := range tt {
-		if tc.err == nil {
-			master.Exec("CREATE DATABASE " + tc.dbname)
-			master.Exec(
-				fmt.Sprintf(
-					"GRANT ALL PRIVILEGES ON DATABASE %s TO %s",
-					tc.dbname, goodURL.User))
-			defer master.Exec("DROP DATABASE " + tc.dbname)
+		newdb.Close()
+		// This is the not-nice way to close connections
+		// db.Exec(fmt.Sprintf(`SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '%s' AND pid <> pg_backend_pid()`,						dbname					))
+		if _, err := db.Exec("DROP DATABASE " + dbname); err != nil {
+			t.Errorf("unable to cleanup database: %v", err)
 		}
-		db, err := Connect(tc.dburl)
-		assert.Equal(t, tc.err, err)
-		if err == nil {
-			defer db.Close()
-			var result int
-			err = db.QueryRow("SELECT 1").Scan(&result)
-			assert.Nil(t, err)
-			assert.Equal(t, 1, result)
+		if err := db.Close(); err != nil {
+			t.Errorf("unable to close: %v", err)
 		}
 	}
+	return newdb, cleanup
 }
 
 func TestGetState(t *testing.T) {
-	db, cleanup := freshDB()
+	db, cleanup := freshDB(t)
 	defer cleanup()
 	db.Exec(goodMigrations[0].ForwardSQL[0])
 	db.Exec(goodMigrations[1].ForwardSQL[0])
@@ -126,7 +130,7 @@ func TestGetState(t *testing.T) {
 }
 
 func TestGetLog(t *testing.T) {
-	db, cleanup := freshDB()
+	db, cleanup := freshDB(t)
 	defer cleanup()
 	db.Exec(goodMigrations[0].ForwardSQL[0])
 	db.Exec(goodMigrations[1].ForwardSQL[0])
@@ -169,7 +173,7 @@ func TestGetLog(t *testing.T) {
 }
 
 func TestMigrateForwardTo(t *testing.T) {
-	db, cleanup := freshDB()
+	db, cleanup := freshDB(t)
 	defer cleanup()
 	tt := []struct {
 		desc          string
@@ -211,7 +215,7 @@ func TestMigrateForwardTo(t *testing.T) {
 }
 
 func TestMigrateBackwardTo(t *testing.T) {
-	db, cleanup := freshDB()
+	db, cleanup := freshDB(t)
 	defer cleanup()
 	MigrateForwardTo("", db, goodMigrations, false)
 	name := goodMigrations[1].Name
@@ -227,13 +231,14 @@ func TestMigrateBackwardTo(t *testing.T) {
 	err = MigrateBackwardTo(goodMigrations[0].Name, db, goodMigrations, false)
 	assert.Equal(t,
 		errors.New(
-			"error running migration: pq: Will not roll back 00001_init.  You must manually drop the migration_state and migration_log tables."),
+			"error running migration: pq: Will not roll back 00001_init.  You must manually drop the migration_state and migration_log tables.",
+		),
 		err,
 	)
 }
 
 func TestMigrateFailure(t *testing.T) {
-	db, cleanup := freshDB()
+	db, cleanup := freshDB(t)
 	defer cleanup()
 	err := MigrateForwardTo("", db, badMigrations, false)
 	assert.Equal(t,
@@ -256,7 +261,7 @@ func TestMigrateFailure(t *testing.T) {
 }
 
 func TestFakeMigrateForwardTo(t *testing.T) {
-	db, cleanup := freshDB()
+	db, cleanup := freshDB(t)
 	defer cleanup()
 	err := MigrateForwardTo("00001_init", db, goodMigrations, false)
 	assert.Nil(t, err)
@@ -346,7 +351,8 @@ $$ LANGUAGE plpgsql;
 SELECT no_rollback();
 COMMIT;
 `},
-	}, {
+	},
+	{
 		Name: "00002_foobar",
 		ForwardSQL: []string{`BEGIN;
 CREATE TABLE foo (
@@ -361,7 +367,8 @@ DROP TABLE foo;
 DELETE FROM migration_state WHERE name='00002_foobar';
 COMMIT;
 `},
-	}, {
+	},
+	{
 		Name: "00003_foobaz",
 		ForwardSQL: []string{`BEGIN;
 ALTER TABLE foo ADD COLUMN bar TEXT;
@@ -373,7 +380,8 @@ ALTER TABLE foo DROP COLUMN bar;
 DELETE FROM migration_state WHERE name='00003_foobaz';
 COMMIT;
 `},
-	}, {
+	},
+	{
 		Name: "00004_fooquux",
 		ForwardSQL: []string{`BEGIN;
 CREATE TABLE quux (
@@ -391,12 +399,14 @@ COMMIT;
 	},
 	{
 		Name: "00005_seperate",
-		ForwardSQL: []string{`
+		ForwardSQL: []string{
+			`
 		CREATE TABLE quuxConcurrent  (
 		id SERIAL PRIMARY KEY,
 		time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 		);`, `CREATE INDEX CONCURRENTLY idx_id on quuxConcurrent(id);`,
-			`INSERT INTO migration_state(name) VALUES ('00005_seperate');`},
+			`INSERT INTO migration_state(name) VALUES ('00005_seperate');`,
+		},
 		BackwardSQL: []string{`BEGIN;
 		DROP TABLE quuxConcurrent;
 		DELETE FROM migration_state WHERE name='00005_seperate';

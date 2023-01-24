@@ -2,6 +2,7 @@ package pomegranate
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestNameInState(t *testing.T) {
 	}{
 		{
 			name:   "foo",
-			state:  []MigrationRecord{MigrationRecord{Name: "foo"}},
+			state:  []MigrationRecord{{Name: "foo"}},
 			result: true,
 		},
 		{
@@ -66,7 +67,7 @@ func TestNameInMigrations(t *testing.T) {
 	}{
 		{
 			name:       "foo",
-			migrations: []Migration{Migration{Name: "foo"}},
+			migrations: []Migration{{Name: "foo"}},
 			result:     true,
 		},
 		{
@@ -90,19 +91,19 @@ func TestTrimMigrationsTail(t *testing.T) {
 		{
 			name: "foo",
 			in: []Migration{
-				Migration{Name: "foo"},
-				Migration{Name: "bar"},
+				{Name: "foo"},
+				{Name: "bar"},
 			},
 			out: []Migration{
-				Migration{Name: "foo"},
+				{Name: "foo"},
 			},
 			err: nil,
 		},
 		{
 			name: "banana",
 			in: []Migration{
-				Migration{Name: "foo"},
-				Migration{Name: "bar"},
+				{Name: "foo"},
+				{Name: "bar"},
 			},
 			out: nil,
 			err: errors.New("migration banana not found"),
@@ -241,5 +242,30 @@ func TestGetMigrationsToReverse(t *testing.T) {
 		out, err := getMigrationsToReverse(tc.name, state, migs)
 		assert.Equal(t, migsToNames(out), tc.out)
 		assert.Equal(t, err, tc.err)
+	}
+}
+
+func Test_panicOnError(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		message string
+		args    []interface{}
+		panics  bool
+	}{
+		{"handle no fmt args", nil, "", nil, false},
+		{"args", nil, "%v %v", []interface{}{"1", "2"}, false},
+		{"panics", fmt.Errorf("asdasdas"), "%v %v", []interface{}{"1", "2"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); (r != nil) != tt.panics {
+					t.Logf("recovered=%v, tt.panics=%v", r, tt.panics)
+					t.Errorf("Got panic() and didnt, or didnt, and expected")
+				}
+			}()
+			panicOnError(tt.err, tt.message, tt.args...)
+		})
 	}
 }
