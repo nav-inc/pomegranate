@@ -50,7 +50,7 @@ func TestMain(m *testing.M) {
 	var err error
 	dburl = os.Getenv("DATABASE_URL")
 	if dburl == "" {
-		dburl = "postgres://postgres@/postgres?sslmode=disable"
+		dburl = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 	}
 	master, err = sql.Open("postgres", dburl)
 	if err != nil {
@@ -60,15 +60,15 @@ func TestMain(m *testing.M) {
 }
 
 func TestConnect(t *testing.T) {
-	goodURL, _ := url.Parse(dburl)
-	goodURL.Path = "/goodconnect"
+	goodURL, err := url.Parse(dburl)
+	panicOnError(err, "Unable to parse good URL from %q: %v", dburl, err)
 	tt := []struct {
 		dbname string
 		dburl  string
 		err    error
 	}{
 		{
-			dbname: "goodconnect",
+			dbname: goodURL.Path[1:],
 			dburl:  goodURL.String(),
 			err:    nil,
 		},
@@ -85,7 +85,8 @@ func TestConnect(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		if tc.err == nil {
+		t.Logf("tt.dbname=%q, tt.dburl=%v", tc.dbname, tc.dburl)
+		if tc.err == nil && tc.dbname != "postgres" {
 			master.Exec("CREATE DATABASE " + tc.dbname)
 			master.Exec(
 				fmt.Sprintf(
