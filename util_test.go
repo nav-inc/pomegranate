@@ -255,12 +255,13 @@ func Test_panicOnError(t *testing.T) {
 	}{
 		{"handle no fmt args", nil, "", nil, false},
 		{"args", nil, "%v %v", []interface{}{"1", "2"}, false},
-		{"panics", fmt.Errorf("asdasdas"), "%v %v", []interface{}{"1", "2"}, false},
+		{"panics", fmt.Errorf("asdasdas"), "%v %v", []interface{}{"1", "2"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			defer func() {
-				if r := recover(); (tt.panics && (r != nil)) || (!tt.panics && (r == nil)) {
+				if r := recover(); (r != nil) != tt.panics {
+					t.Logf("recovered=%v, tt.panics=%v", r, tt.panics)
 					t.Errorf("Got panic() and didnt, or didnt, and expected")
 				}
 			}()

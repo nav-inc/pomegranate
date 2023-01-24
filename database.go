@@ -14,21 +14,21 @@ import (
 
 // Connect calls sql.Open for you, specifying the Postgres driver and printing
 // the DB name and host to stdout so you can check that you're connecting to the
-// right place before continuing.
-func Connect(dburl string) (*sql.DB, error) {
+// right place before continuing.  dial MUST be in URL form.
+func Connect(dial string) (*sql.DB, error) {
 	// Failure to set the DATABASE_URL env var or provide the dburl command line
 	// flag could result in an empty dburl here.  Catch that.
-	if dburl == "" {
+	if dial == "" {
 		return nil, errors.New("empty database url provided")
 	}
-	url, err := url.Parse(dburl)
+	url, err := url.Parse(dial)
 	if err != nil {
 		return nil, err
 	}
 	// trim leading slash
 	dbname := strings.Trim(url.Path, "/")
 	fmt.Printf("Connecting to database '%s' on host '%s'\n", dbname, url.Host)
-	return sql.Open("postgres", dburl)
+	return sql.Open("postgres", dial)
 }
 
 // GetMigrationState returns the stack of migration records stored in the
