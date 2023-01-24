@@ -2,6 +2,7 @@ package pomegranate
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -241,5 +242,29 @@ func TestGetMigrationsToReverse(t *testing.T) {
 		out, err := getMigrationsToReverse(tc.name, state, migs)
 		assert.Equal(t, migsToNames(out), tc.out)
 		assert.Equal(t, err, tc.err)
+	}
+}
+
+func Test_panicOnError(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		message string
+		args    []interface{}
+		panics  bool
+	}{
+		{"handle no fmt args", nil, "", nil, false},
+		{"args", nil, "%v %v", []interface{}{"1", "2"}, false},
+		{"panics", fmt.Errorf("asdasdas"), "%v %v", []interface{}{"1", "2"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); (tt.panics && (r != nil)) || (!tt.panics && (r == nil)) {
+					t.Errorf("Got panic() and didnt, or didnt, and expected")
+				}
+			}()
+			panicOnError(tt.err, tt.message, tt.args...)
+		})
 	}
 }

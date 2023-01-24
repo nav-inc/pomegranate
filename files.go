@@ -2,13 +2,13 @@ package pomegranate
 
 import (
 	"bytes"
-	"embed"
 	"fmt"
 	"go/format"
+	"io"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -67,7 +67,7 @@ func InitMigrationTimestamp(dir string, timestamp time.Time) error {
 // stubs.  The directory created will use the name provided to the function,
 // prepended by an auto-incrementing zero-padded number.
 func NewMigration(dir, name string) error {
-	names, err := getMigrationDirectoryNames(dir)
+	names, err := getMigrationDirectoryNames(OsDir(dir))
 	if err != nil {
 		return fmt.Errorf("error making new migration: %v", err)
 	}
@@ -104,44 +104,46 @@ func NewMigrationTimestamp(dir, name string, timestamp time.Time) error {
 	return nil
 }
 
-// ReadMigrationFiles reads all the migration files in the given directory and
-// returns an array of Migration objects.
-func ReadMigrationFiles(dir string) ([]Migration, error) {
-	names, err := getMigrationDirectoryNames(dir)
+/*
+		ReadMigrationFs allows one to embed an entire migration folder using the [embed] package.
+
+	    go:embed migrations-dir
+	    var migrationDir embed.FS
+	    ...
+	    migrations, err := ReadMigrationFs(migrationDir)
+
+	  It is expected that  migrations is a *directory*, and it will be treated as such"
+*/
+func ReadMigrationFS(migFolder fs.ReadDirFS) ([]Migration, error) {
+	names, err := getMigrationDirectoryNames(migFolder)
 	if err != nil {
 		return nil, err
 	}
 
 	migs := []Migration{}
 	for _, name := range names {
-		m, err := readMigration(dir, name)
+		m, err := readMigration(migFolder, name)
+		fmt.Println(m, err)
 		if err != nil {
 			return nil, err
 		}
 		migs = append(migs, m)
 	}
-
 	return migs, nil
 }
 
-/*
-	ReadMigrationFs allows one to embed an entire migration folder using the [embed] package.
-
-go:embed migrations-dir
-var migrationDir embed.FS
-...
-migrations, err := ReadMigrationFs(migrationDir)
-*/
-func ReadMigrationFS(migrations embed.FS) ([]Migration, error) {
-	return nil, fmt.Errorf("not implemented")
+// ReadMigrationFiles reads all the migration files in the given directory and
+// returns an array of Migration objects.
+func ReadMigrationFiles(dir string) ([]Migration, error) {
+	return ReadMigrationFS(OsDir(dir))
 }
 
 // return a list of subdirs that match our pattern
-func getMigrationDirectoryNames(dir string) ([]string, error) {
+func getMigrationDirectoryNames(dir fs.ReadDirFS) ([]string, error) {
 	names := []string{}
-	files, err := ioutil.ReadDir(dir)
+	files, err := dir.ReadDir(".")
 	if err != nil {
-		return nil, fmt.Errorf("error listing migration files: %v", err)
+		return nil, fmt.Errorf("error listing migration files: %w", err)
 	}
 
 	for _, file := range files {
@@ -197,10 +199,9 @@ func makeStubName(numPart int, namePart string) string {
 func readFileArray(fileNames []string) ([]string, error) {
 	files := []string{}
 
-	//sort the input array.  This is so fileName_a, fileName _b are sorted in the correct order
+	// sort the input array.  This is so fileName_a, fileName _b are sorted in the correct order
 	sort.Strings(fileNames)
 
-	//fwd, err := ioutil.ReadFile(path.Join(dir, name, forwardFile))
 	for _, fileName := range fileNames {
 		bytes, err := ioutil.ReadFile(fileName)
 		if err != nil {
@@ -214,39 +215,43 @@ func readFileArray(fileNames []string) ([]string, error) {
 // reads the directory containing the folder specified by name.
 // reads all the contents of the file into a Migration.
 // searches directory for all file names containing either "forward"
-func readMigration(dir, name string) (Migration, error) {
-	m := Migration{Name: name}
-	//grab all files that contain word "forward"/"backward"
-	fwdSearch := path.Join(dir, name, "/*forward*.sql")
-	bwdSearch := path.Join(dir, name, "/*backward*.sql")
+// dir is the root directory
+// name is the name of the migration folder
+func readMigration(dir fs.ReadDirFS, migrationName string) (Migration, error) {
+	m := Migration{Name: migrationName, ForwardSQL: []string{}, BackwardSQL: []string{}}
 
-	fwd, err := filepath.Glob(fwdSearch)
+	migrationDirs, err := dir.ReadDir(migrationName)
 	if err != nil {
-		return m, err
+		return m, fmt.Errorf("Unable to list directory: %w", err)
 	}
 
-	bwd, err := filepath.Glob(bwdSearch)
-	if err != nil {
-		return m, err
+	readEntry := func(sqlFilename string) string {
+		// The errors here are so that we give up when we cannot read from a fs.ReadDirFS.
+		// these errors are things like `no accces to write` or similar.
+		f, err := dir.Open(path.Join(migrationName, sqlFilename))
+		panicOnError(err, "Unable to open %q: %w", sqlFilename, err)
+		defer f.Close()
+		b, err := io.ReadAll(f) // we get an error here if we cannot read bytes
+		panicOnError(err, "Unable to read %q: %w", sqlFilename, err)
+		return string(b)
 	}
 
-	fwdFilesArr, err := readFileArray(fwd)
-	if err != nil {
-		return m, err
+	for _, migration := range migrationDirs { // iterate over all the migration folders
+		if n := migration.Name(); strings.HasSuffix(n, ".sql") { // looking for "*.sql" files
+			if strings.Contains(n, "forward") {
+				m.ForwardSQL = append(m.ForwardSQL, readEntry(n))
+				continue
+			}
+			if strings.Contains(n, "backward") {
+				m.BackwardSQL = append(m.BackwardSQL, readEntry(n))
+				continue
+			}
+		}
 	}
-
-	bwdFilesArr, err := readFileArray(bwd)
-	if err != nil {
-		return m, err
-	}
-
-	m.ForwardSQL = fwdFilesArr
-	m.BackwardSQL = bwdFilesArr
-
 	return m, nil
 }
 
-func writeGoMigrations(dir, goFile, packageName string, migs []Migration, generateTag bool) error {
+func writeGoMigrations(dir string, goFile string, packageName string, migs []Migration, generateTag bool) error {
 	tmpl, err := template.New("migrations").Parse(srcTmpl)
 	if err != nil {
 		return err
@@ -276,11 +281,8 @@ func zeroPad(num, digits int) string {
 	return fmt.Sprintf("%"+fmt.Sprintf("0%dd", digits), num)
 }
 
+var migrationPattern = regexp.MustCompile(fmt.Sprintf(`^[\d]{%d,}_.*$`, leadingDigits))
+
 func isMigration(dir string) bool {
-	pat := fmt.Sprintf(`^[\d]{%d,}_.*$`, leadingDigits)
-	match, err := regexp.MatchString(pat, dir)
-	if err != nil {
-		return false
-	}
-	return match
+	return migrationPattern.MatchString(dir)
 }
