@@ -123,7 +123,6 @@ func ReadMigrationFS(migFolder fs.ReadDirFS) ([]Migration, error) {
 	migs := []Migration{}
 	for _, name := range names {
 		m, err := readMigration(migFolder, name)
-		fmt.Println(m, err)
 		if err != nil {
 			return nil, err
 		}
