@@ -104,16 +104,14 @@ func NewMigrationTimestamp(dir, name string, timestamp time.Time) error {
 	return nil
 }
 
-/*
-		ReadMigrationFs allows one to embed an entire migration folder using the [embed] package.
-
-	    go:embed migrations-dir
-	    var migrationDir embed.FS
-	    ...
-	    migrations, err := ReadMigrationFs(migrationDir)
-
-	  It is expected that  migrations is a *directory*, and it will be treated as such"
-*/
+// ReadMigrationFs allows one to embed an entire migration folder using the [embed] package.
+//
+//			go:embed migrations-dir
+//			var migrationDir embed.FS
+//		  ...
+//	   migrations, err := ReadMigrationFs(migrationDir)
+//
+// It is expected that  migrations is a *directory*, and it will be treated as such"
 func ReadMigrationFS(migFolder fs.ReadDirFS) ([]Migration, error) {
 	names, err := getMigrationDirectoryNames(migFolder)
 	if err != nil {
