@@ -162,7 +162,7 @@ similar to the following.
 
 //go:embed path/to/migrations
 var embedded embed.FS
-var migrationFS = FromEmbed(embedded, "path/to/migrations")
+var migrationFS = pomegranate.FromEmbed(embedded, "path/to/migrations")
 ...
 
 migrations, err := pomegranate.ReadMigrationFS(migrationFS)
