@@ -1,6 +1,7 @@
 package pomegranate
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -21,29 +22,34 @@ func Connect(dial string) (*sql.DB, error) {
 	if dial == "" {
 		return nil, errors.New("empty database url provided")
 	}
-	url, err := url.Parse(dial)
+	parsedUrl, err := url.Parse(dial)
 	if err != nil {
 		return nil, err
 	}
 	// trim leading slash
-	dbname := strings.Trim(url.Path, "/")
-	fmt.Printf("Connecting to database '%s' on host '%s'\n", dbname, url.Host)
+	dbname := strings.Trim(parsedUrl.Path, "/")
+	fmt.Printf("Connecting to database '%s' on host '%s'\n", dbname, parsedUrl.Host)
 	return sql.Open("postgres", dial)
 }
 
 type Database interface {
-	Query(query string, args ...any) (*sql.Rows, error)
-	QueryRow(query string, args ...any) *sql.Row
-	Exec(query string, args ...any) (sql.Result, error)
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
 }
 
-// GetMigrationState returns the stack of migration records stored in the
+// deprecated use GetMigrationStateContext
+func GetMigrationState(db Database) ([]MigrationRecord, error) {
+	return GetMigrationStateContext(context.TODO(), db)
+}
+
+// GetMigrationStateContext returns the stack of migration records stored in the
 // database's migration_state table.  If that table does not exist, it returns
 // an empty list.
-func GetMigrationState(db Database) ([]MigrationRecord, error) {
+func GetMigrationStateContext(ctx context.Context, db Database) ([]MigrationRecord, error) {
 	// first see if the migration_state table exists
 	var exists bool
-	err := db.QueryRow(`
+	err := db.QueryRowContext(ctx, `
       SELECT EXISTS (
          SELECT 1 
          FROM   pg_tables
@@ -57,7 +63,7 @@ func GetMigrationState(db Database) ([]MigrationRecord, error) {
 	if !exists {
 		return []MigrationRecord{}, nil
 	}
-	rows, err := db.Query("SELECT name, time, who FROM migration_state ORDER BY name")
+	rows, err := db.QueryContext(ctx, "SELECT name, time, who FROM migration_state ORDER BY name")
 	if err != nil {
 		return nil, fmt.Errorf("get past migrations: %v", err)
 	}
@@ -73,11 +79,16 @@ func GetMigrationState(db Database) ([]MigrationRecord, error) {
 	return pastMigrations, nil
 }
 
-// GetMigrationLog returns the complete history of all migrations, forward and backward.  If the
-// migration_log table does not exist, it returns an empty list of MigrationLogRecords
+// deprecated use GetMigrationLogContext
 func GetMigrationLog(db Database) ([]MigrationLogRecord, error) {
+	return GetMigrationLogContext(context.TODO(), db)
+}
+
+// GetMigrationLogContext returns the complete history of all migrations, forward and backward.  If the
+// migration_log table does not exist, it returns an empty list of MigrationLogRecords
+func GetMigrationLogContext(ctx context.Context, db Database) ([]MigrationLogRecord, error) {
 	var exists bool
-	err := db.QueryRow(`
+	err := db.QueryRowContext(ctx, `
       SELECT EXISTS (
          SELECT 1 
          FROM   pg_tables
@@ -91,7 +102,7 @@ func GetMigrationLog(db Database) ([]MigrationLogRecord, error) {
 	if !exists {
 		return []MigrationLogRecord{}, nil
 	}
-	rows, err := db.Query("SELECT id, time, name, op, who FROM migration_log ORDER BY id")
+	rows, err := db.QueryContext(ctx, "SELECT id, time, name, op, who FROM migration_log ORDER BY id")
 	if err != nil {
 		return nil, fmt.Errorf("get migration log: %v", err)
 	}
@@ -107,13 +118,18 @@ func GetMigrationLog(db Database) ([]MigrationLogRecord, error) {
 	return records, nil
 }
 
-// MigrateBackwardTo will run backward migrations starting with the most recent
-// in state, and going through the one provided in `name`.
+// deprecated use MigrateBackwardToContext
 func MigrateBackwardTo(name string, db Database, allMigrations []Migration, confirm bool) error {
+	return MigrateBackwardToContext(context.TODO(), name, db, allMigrations, confirm)
+}
+
+// MigrateBackwardToContext will run backward migrations starting with the most recent
+// in state, and going through the one provided in `name`.
+func MigrateBackwardToContext(ctx context.Context, name string, db Database, allMigrations []Migration, confirm bool) error {
 	if len(allMigrations) == 0 {
 		return errors.New("no migrations provided")
 	}
-	state, err := GetMigrationState(db)
+	state, err := GetMigrationStateContext(ctx, db)
 	if err != nil {
 		return fmt.Errorf("could not get migration state: %v", err)
 	}
@@ -133,7 +149,7 @@ func MigrateBackwardTo(name string, db Database, allMigrations []Migration, conf
 	}
 	// run the migrations
 	for _, mig := range toRun {
-		err = runMigrationSQL(db, mig.Name, mig.BackwardSQL)
+		err = runMigrationSQLContext(ctx, db, mig.Name, mig.BackwardSQL)
 		if err != nil {
 			return err
 		}
@@ -141,10 +157,15 @@ func MigrateBackwardTo(name string, db Database, allMigrations []Migration, conf
 	return nil
 }
 
-// MigrateForwardTo will run all forward migrations that have not yet been run, up to and including
-// the one specified by `name`.  To run all un-run migrations, set `name` to an empty string.
+// deprecated use MigrateForwardToContext
 func MigrateForwardTo(name string, db Database, allMigrations []Migration, confirm bool) error {
-	state, err := GetMigrationState(db)
+	return MigrateForwardToContext(context.TODO(), name, db, allMigrations, confirm)
+}
+
+// MigrateForwardToContext will run all forward migrations that have not yet been run, up to and including
+// the one specified by `name`.  To run all un-run migrations, set `name` to an empty string.
+func MigrateForwardToContext(ctx context.Context, name string, db Database, allMigrations []Migration, confirm bool) error {
+	state, err := GetMigrationStateContext(ctx, db)
 	if err != nil {
 		return fmt.Errorf("could not get migration state: %v", err)
 	}
@@ -164,7 +185,7 @@ func MigrateForwardTo(name string, db Database, allMigrations []Migration, confi
 	}
 	// run migrations
 	for _, mig := range toRun {
-		err = runMigrationSQL(db, mig.Name, mig.ForwardSQL)
+		err = runMigrationSQLContext(ctx, db, mig.Name, mig.ForwardSQL)
 		if err != nil {
 			return err
 		}
@@ -172,25 +193,29 @@ func MigrateForwardTo(name string, db Database, allMigrations []Migration, confi
 	return nil
 }
 
-func runMigrationSQL(db Database, name string, sqlToRun []string) error {
+func runMigrationSQLContext(ctx context.Context, db Database, name string, sqlToRun []string) error {
 	fmt.Printf("Running %s... ", name)
 	for _, sql := range sqlToRun {
-		_, err := db.Exec(sql)
+		_, err := db.ExecContext(ctx, sql)
 		if err != nil {
 			fmt.Println("Failure :(")
 			return fmt.Errorf("error running migration: %v", err)
 		}
 	}
-
 	fmt.Println("Success!")
 	return nil
 }
 
-// FakeMigrateForwardTo will record all forward migrations that have not yet been run in the
+// deprecated use FakeMigrateForwardToContext
+func FakeMigrateForwardTo(name string, db Database, allMigrations []Migration, confirm bool) error {
+	return FakeMigrateForwardToContext(context.TODO(), name, db, allMigrations, confirm)
+}
+
+// FakeMigrateForwardToContext will record all forward migrations that have not yet been run in the
 // migration_state table, up to and including the one specified by `name`, without actually running
 // their ForwardSQL. To fake all un-run migrations, set `name` to an empty string.
-func FakeMigrateForwardTo(name string, db Database, allMigrations []Migration, confirm bool) error {
-	state, err := GetMigrationState(db)
+func FakeMigrateForwardToContext(ctx context.Context, name string, db Database, allMigrations []Migration, confirm bool) error {
+	state, err := GetMigrationStateContext(ctx, db)
 	if err != nil {
 		return fmt.Errorf("could not get migration state: %v", err)
 	}
@@ -210,7 +235,7 @@ func FakeMigrateForwardTo(name string, db Database, allMigrations []Migration, c
 	}
 	for _, m := range toRun {
 		fmt.Printf("Faking %s... ", m.Name)
-		_, err := db.Exec("INSERT INTO migration_state (name) VALUES ($1)", m.Name)
+		_, err := db.ExecContext(ctx, "INSERT INTO migration_state (name) VALUES ($1)", m.Name)
 		if err != nil {
 			fmt.Println("Failure :(")
 			return fmt.Errorf("error faking migration: %v", err)
